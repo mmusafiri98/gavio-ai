@@ -3,12 +3,26 @@ import torch
 from diffusers import DiffusionPipeline
 import numpy as np
 from PIL import Image
-import cv2
 import tempfile
 import os
 import time
 from io import BytesIO
 import base64
+
+# Gestion flexible de cv2 pour éviter les erreurs
+try:
+    import cv2
+    CV2_AVAILABLE = True
+except ImportError:
+    CV2_AVAILABLE = False
+    st.warning("⚠️ OpenCV non disponible. Utilisation d'une alternative pour la génération vidéo.")
+
+# Alternative sans cv2
+try:
+    import imageio
+    IMAGEIO_AVAILABLE = True
+except ImportError:
+    IMAGEIO_AVAILABLE = False
 
 # Configuration de la page
 st.set_page_config(
@@ -87,36 +101,71 @@ def load_model():
         st.error(f"❌ Erreur lors du chargement: {e}")
         return None
 
-# Fonction pour convertir frames en vidéo
+# Fonction pour convertir frames en vidéo (avec alternatives)
 def frames_to_video(frames, fps=8, output_path="output.mp4"):
-    """Convertit une liste de frames PIL en vidéo MP4"""
+    """Convertit une liste de frames PIL en vidéo MP4 avec plusieurs méthodes"""
     if not frames:
         return None
-        
-    # Convertir PIL Images en arrays numpy
-    frame_arrays = []
-    for frame in frames:
-        if isinstance(frame, Image.Image):
-            frame_array = np.array(frame)
+    
+    try:
+        # Méthode 1: Avec imageio (plus compatible)
+        if IMAGEIO_AVAILABLE:
+            frame_arrays = []
+            for frame in frames:
+                if isinstance(frame, Image.Image):
+                    frame_array = np.array(frame)
+                else:
+                    frame_array = frame
+                frame_arrays.append(frame_array)
+            
+            # Créer la vidéo avec imageio
+            imageio.mimsave(output_path, frame_arrays, fps=fps, format='mp4')
+            return output_path
+            
+        # Méthode 2: Avec cv2 (si disponible)
+        elif CV2_AVAILABLE:
+            frame_arrays = []
+            for frame in frames:
+                if isinstance(frame, Image.Image):
+                    frame_array = np.array(frame)
+                else:
+                    frame_array = frame
+                frame_arrays.append(frame_array)
+            
+            height, width, channels = frame_arrays[0].shape
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+            
+            for frame_array in frame_arrays:
+                frame_bgr = cv2.cvtColor(frame_array, cv2.COLOR_RGB2BGR)
+                out.write(frame_bgr)
+            
+            out.release()
+            return output_path
+            
+        # Méthode 3: GIF animé comme alternative
         else:
-            frame_array = frame
-        frame_arrays.append(frame_array)
-    
-    # Dimensions de la vidéo
-    height, width, channels = frame_arrays[0].shape
-    
-    # Créer le writer vidéo
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-    
-    # Écrire chaque frame
-    for frame_array in frame_arrays:
-        # Convertir RGB en BGR pour OpenCV
-        frame_bgr = cv2.cvtColor(frame_array, cv2.COLOR_RGB2BGR)
-        out.write(frame_bgr)
-    
-    out.release()
-    return output_path
+            gif_path = output_path.replace('.mp4', '.gif')
+            pil_frames = []
+            for frame in frames:
+                if isinstance(frame, Image.Image):
+                    pil_frames.append(frame)
+                else:
+                    pil_frames.append(Image.fromarray(frame))
+            
+            # Sauvegarder comme GIF animé
+            pil_frames[0].save(
+                gif_path,
+                save_all=True,
+                append_images=pil_frames[1:],
+                duration=int(1000/fps),
+                loop=0
+            )
+            return gif_path
+            
+    except Exception as e:
+        st.error(f"❌ Erreur lors de la création vidéo: {e}")
+        return None
 
 # Fonction pour générer la vidéo
 def generate_video(pipe, prompt, num_frames=16, fps=8, seed=None):
@@ -227,22 +276,41 @@ if st.button("🚀 Générer la Vidéo", disabled=(pipe is None)):
         if frames and video_path:
             st.success("✅ Vidéo générée avec succès!")
             
-            # Affichage de la vidéo
+            # Affichage de la vidéo/GIF
             col1, col2 = st.columns(2)
             
             with col1:
-                st.markdown("**🎬 Vidéo générée:**")
-                with open(video_path, 'rb') as video_file:
-                    video_bytes = video_file.read()
-                    st.video(video_bytes)
+                st.markdown("**🎬 Résultat généré:**")
                 
-                # Bouton de téléchargement
-                st.download_button(
-                    label="⬇️ Télécharger la vidéo",
-                    data=video_bytes,
-                    file_name=f"video_{int(time.time())}.mp4",
-                    mime="video/mp4"
-                )
+                # Déterminer le type de fichier
+                is_gif = video_path.endswith('.gif')
+                
+                if is_gif:
+                    # Afficher le GIF
+                    with open(video_path, 'rb') as gif_file:
+                        gif_bytes = gif_file.read()
+                        st.image(gif_bytes)
+                        
+                    # Bouton de téléchargement pour GIF
+                    st.download_button(
+                        label="⬇️ Télécharger le GIF",
+                        data=gif_bytes,
+                        file_name=f"animation_{int(time.time())}.gif",
+                        mime="image/gif"
+                    )
+                else:
+                    # Afficher la vidéo MP4
+                    with open(video_path, 'rb') as video_file:
+                        video_bytes = video_file.read()
+                        st.video(video_bytes)
+                    
+                    # Bouton de téléchargement pour MP4
+                    st.download_button(
+                        label="⬇️ Télécharger la vidéo",
+                        data=video_bytes,
+                        file_name=f"video_{int(time.time())}.mp4",
+                        mime="video/mp4"
+                    )
             
             with col2:
                 st.markdown("**🖼️ Frames individuelles:**")
