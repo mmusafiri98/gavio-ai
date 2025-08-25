@@ -19,7 +19,7 @@ duration = st.slider("⏱️ Durée (secondes)", 5, 30, 10)
 
 if st.button("🎼 Générer"):
     with st.spinner("🎵 Génération de la musique..."):
-        result = music_pipe(prompt, forward_params={"max_new_tokens": duration * 50})  # environ
+        result = music_pipe(prompt, forward_params={"max_new_tokens": duration * 50})
         audio_bytes = result["audio"]
 
         # Sauvegarder en fichier
@@ -38,3 +38,4 @@ if st.button("🎼 Générer"):
                 file_name=filename,
                 mime="audio/wav"
             )
+
