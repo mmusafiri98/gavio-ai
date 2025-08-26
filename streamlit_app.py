@@ -2,7 +2,7 @@ import streamlit as st
 from gradio_client import Client
 
 # Initialiser le client du modèle
-client = Client("Qwen/Qwen2.5-Coder-Artifacts")
+client = Client("Qwen/Qwen2.5-Coder-32B-Instruct")
 
 st.set_page_config(layout="wide")
 st.title("Interface Streamlit pour Qwen2.5-Coder")
@@ -16,20 +16,25 @@ with col1:
     if st.button("Générer le code"):
         if prompt:
             with st.spinner("Génération du code..."):
-                # Appel du modèle
-                code_result = client.predict(
-                    api_name="/demo_card_click",
-                    data=[prompt]
-                )
-            st.session_state["generated_code"] = code_result
+                try:
+                    # Appel du modèle
+                    code_result = client.predict(prompt_text=prompt)
+                    st.session_state["generated_code"] = code_result
+                except Exception as e:
+                    st.error(f"Erreur lors de l'appel au modèle : {e}")
+        else:
+            st.warning("Veuillez entrer un prompt avant de générer le code.")
 
 with col2:
     st.header("Code généré")
     code = st.session_state.get("generated_code", "")
-    st.code(code, language="python" if "python" in code.lower() else "html")
+    if code:
+        st.code(code, language="python" if "python" in code.lower() else "html")
+    else:
+        st.info("Le code généré s'affichera ici.")
 
     st.header("Résultat / Aperçu")
-    if code.strip() != "":
+    if code.strip():
         try:
             # Si le code est du HTML, l'afficher
             if code.strip().startswith("<") or "html" in code.lower():
@@ -42,3 +47,5 @@ with col2:
                     st.write(exec_locals['output'])
         except Exception as e:
             st.error(f"Erreur lors de l'exécution du code : {e}")
+    else:
+        st.info("Le résultat s'affichera ici.")
