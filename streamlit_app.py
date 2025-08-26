@@ -1,41 +1,44 @@
 import streamlit as st
-from transformers import pipeline
+from gradio_client import Client
 
-st.set_page_config(page_title="🎵 MusicGen App", page_icon="🎶", layout="centered")
+# Initialiser le client du modèle
+client = Client("Qwen/Qwen2.5-Coder-Artifacts")
 
-st.title("🎶 Générateur de musique avec MusicGen (CPU friendly)")
+st.set_page_config(layout="wide")
+st.title("Interface Streamlit pour Qwen2.5-Coder")
 
-# Charger le modèle MusicGen
-@st.cache_resource
-def load_model():
-    return pipeline("text-to-audio", model="facebook/musicgen-small")
+# Layout avec colonnes
+col1, col2 = st.columns([1, 2])
 
-music_pipe = load_model()
+with col1:
+    st.header("Prompt")
+    prompt = st.text_area("Entrez votre demande de code ici :")
+    if st.button("Générer le code"):
+        if prompt:
+            with st.spinner("Génération du code..."):
+                # Appel du modèle
+                code_result = client.predict(
+                    api_name="/demo_card_click",
+                    data=[prompt]
+                )
+            st.session_state["generated_code"] = code_result
 
-# Interface utilisateur
-prompt = st.text_area("📝 Décris ta chanson :", "A calm jazz melody with piano and saxophone.")
+with col2:
+    st.header("Code généré")
+    code = st.session_state.get("generated_code", "")
+    st.code(code, language="python" if "python" in code.lower() else "html")
 
-duration = st.slider("⏱️ Durée (secondes)", 5, 30, 10)
-
-if st.button("🎼 Générer"):
-    with st.spinner("🎵 Génération de la musique..."):
-        result = music_pipe(prompt, forward_params={"max_new_tokens": duration * 50})
-        audio_bytes = result["audio"]
-
-        # Sauvegarder en fichier
-        filename = "musicgen_output.wav"
-        with open(filename, "wb") as f:
-            f.write(audio_bytes)
-
-        st.success("✅ Musique générée !")
-        st.audio(filename, format="audio/wav")
-
-        # Bouton de téléchargement
-        with open(filename, "rb") as f:
-            st.download_button(
-                label="⬇️ Télécharger la musique",
-                data=f,
-                file_name=filename,
-                mime="audio/wav"
-            )
-
+    st.header("Résultat / Aperçu")
+    if code.strip() != "":
+        try:
+            # Si le code est du HTML, l'afficher
+            if code.strip().startswith("<") or "html" in code.lower():
+                st.components.v1.html(code, height=500)
+            # Sinon, exécuter le code Python et afficher le résultat
+            else:
+                exec_locals = {}
+                exec(code, {}, exec_locals)
+                if 'output' in exec_locals:
+                    st.write(exec_locals['output'])
+        except Exception as e:
+            st.error(f"Erreur lors de l'exécution du code : {e}")
